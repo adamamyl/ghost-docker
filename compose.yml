@@ -60,9 +60,14 @@ services:
 
   db:
     image: mariadb:12.1.2-noble
+    build:
+      context: .
+      dockerfile: Dockerfile.db
     restart: always
     expose:
       - "3306"
+    env_file:
+      - .env
     environment:
       MARIADB_ROOT_PASSWORD: ${DATABASE_ROOT_PASSWORD:?DATABASE_ROOT_PASSWORD environment variable is required}
       MARIADB_USER: ${DATABASE_USER:-ghost}
@@ -73,11 +78,10 @@ services:
       - ${MARIADB_DATA_LOCATION:-./data/mariadb}:/var/lib/mysql
       - ./mysql-init:/docker-entrypoint-initdb.d
     healthcheck:
-    test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${MARIADB_ROOT_PASSWORD}"]
-    interval: 1s
-    start_period: 30s
-    retries: 120
-
+      test: ["CMD", "mariadb-admin", "ping", "-h", "127.0.0.1", "-p${MARIADB_ROOT_PASSWORD}"]
+      interval: 1s
+      start_period: 30s
+      retries: 120
     networks:
       - ghost_network
 
@@ -106,6 +110,8 @@ services:
       - "8080"
     volumes:
       - ${UPLOAD_LOCATION:-./data/ghost}:/opt/activitypub/content
+    env_file:
+      - .env
     environment:
       # See https://github.com/TryGhost/ActivityPub/blob/main/docs/env-vars.md
       NODE_ENV: production
