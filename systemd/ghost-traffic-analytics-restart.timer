@@ -2,7 +2,7 @@
 Description=Nightly restart of Ghost traffic-analytics container
 
 [Timer]
-OnCalendar=*-*-* 00,06,12,18:00:00
+OnCalendar=*:0/30
 Persistent=true
 
 [Install]
