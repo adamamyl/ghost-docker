@@ -94,8 +94,8 @@ services:
   traffic-analytics:
     image: ghost/traffic-analytics:1.0.127@sha256:67b47a391b286a7f99fc44c707a915efdc13b61f1152be9caeb910d0ed297fac
     restart: always
-    mem_limit: 128m
-    mem_reservation: 32m
+    mem_limit: 256MB
+    mem_reservation: 64MB
     expose:
       - "3000"
     volumes:
@@ -227,6 +227,12 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     mem_reservation: 16m
+    environment:
+      AWS_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
+      AWS_REGION: eu-west-1
+      DEFAULT_SENDER: hello@securitysaysyes.com
+      LOG_LEVEL: normal
     volumes:
       - ./ses-adapter/config.json:/app/config.json:ro
     networks:
