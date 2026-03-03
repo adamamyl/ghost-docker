@@ -1,0 +1,9 @@
+[Unit]
+Description=Restart Ghost traffic-analytics container (memory leak mitigation)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ghost-docker
+ExecStart=/usr/bin/docker compose restart traffic-analytics
