@@ -4,6 +4,8 @@ services:
   caddy:
     image: caddy:2.10.2-alpine@sha256:953131cfea8e12bfe1c631a36308e9660e4389f0c3dfb3be957044d3ac92d446
     restart: always
+    mem_limit: 64m
+    mem_reservation: 16m
     ports:
       - "80:80"
       - "443:443"
@@ -24,6 +26,8 @@ services:
     # Do not alter this without updating the Tinybird Sync container as well
     image: ghost:${GHOST_VERSION:-6-alpine}
     restart: always
+    mem_limit: 256m
+    mem_reservation: 128m
     # This is required to import current config when migrating
     env_file:
       - .env
@@ -63,6 +67,8 @@ services:
   db:
     image: mysql:8.0-debian
     restart: always
+    mem_limit: 512m
+    mem_reservation: 256m
     expose:
       - "3306"
     env_file:
@@ -88,6 +94,8 @@ services:
   traffic-analytics:
     image: ghost/traffic-analytics:1.0.127@sha256:67b47a391b286a7f99fc44c707a915efdc13b61f1152be9caeb910d0ed297fac
     restart: always
+    mem_limit: 128m
+    mem_reservation: 32m
     expose:
       - "3000"
     volumes:
@@ -106,6 +114,8 @@ services:
   activitypub:
     image: ghcr.io/tryghost/activitypub:1.1.0@sha256:39c212fe23603b182d68e67d555c6b9b04b1e57459dfc0bef26d6e4980eb04d1
     restart: always
+    mem_limit: 256m
+    mem_reservation: 64m
     expose:
       - "8080"
     volumes:
@@ -137,6 +147,8 @@ services:
       context: ./tinybird
       dockerfile: Dockerfile
     working_dir: /home/tinybird
+    mem_limit: 128m
+    mem_reservation: 32m
     command: /usr/local/bin/tinybird-login
     volumes:
       - tinybird_home:/home/tinybird
@@ -150,6 +162,8 @@ services:
   tinybird-sync:
     # Do not alter this without updating the Ghost container as well
     image: ghost:${GHOST_VERSION:-6-alpine}
+    mem_limit: 128m
+    mem_reservation: 32m
     command: >
       sh -c "
         if [ -d /var/lib/ghost/current/core/server/data/tinybird ]; then
@@ -175,6 +189,8 @@ services:
       context: ./tinybird
       dockerfile: Dockerfile
     working_dir: /data/tinybird
+    mem_limit: 128m
+    mem_reservation: 32m
     command: >
       sh -c "
         tb-wrapper --cloud deploy
@@ -192,6 +208,8 @@ services:
 
   activitypub-migrate:
     image: ghcr.io/tryghost/activitypub-migrations:1.1.0@sha256:b3ab20f55d66eb79090130ff91b57fe93f8a4254b446c2c7fa4507535f503662
+    mem_limit: 128m
+    mem_reservation: 32m
     environment:
       MYSQL_DB: mysql://${DATABASE_USER:-ghost}:${DATABASE_PASSWORD:?DATABASE_PASSWORD environment variable is required}@tcp(db:3306)/activitypub
     networks:
@@ -207,6 +225,8 @@ services:
       context: ./ses-adapter
       dockerfile: Dockerfile
     restart: unless-stopped
+    mem_limit: 64m
+    mem_reservation: 16m
     volumes:
       - ./ses-adapter/config.json:/app/config.json:ro
     networks:
