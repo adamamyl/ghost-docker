@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 
-source ../.env
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+source "$SCRIPT_DIR/../.env"
 DB="ghost-docker-db-1"
 
 
 # import settings from directory
 docker exec -it "${DB}" mysql -u ghost -p"${DATABASE_PASSWORD}" ghost \
-  < ../mysql-init/02-ghost-ses-adapter.sql
+  < "$SCRIPT_DIR/../mysql-init/02-ghost-ses-adapter.sql"
 
 # verify
 docker exec -it "${DB}" mysql -u ghost -p"${DATABASE_PASSWORD}" ghost \

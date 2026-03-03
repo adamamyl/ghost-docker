@@ -227,6 +227,12 @@ services:
     restart: unless-stopped
     mem_limit: 64m
     mem_reservation: 16m
+    environment:
+      AWS_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
+      AWS_REGION: eu-west-1
+      DEFAULT_SENDER: hello@securitysaysyes.com
+      LOG_LEVEL: normal
     volumes:
       - ./ses-adapter/config.json:/app/config.json:ro
     networks:
