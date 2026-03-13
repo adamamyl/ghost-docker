@@ -2,8 +2,12 @@ name: Sync Upstream Releases (Safe)
 
 on:
   schedule:
-    - cron: '32 11 * * *'  
+    - cron: '32 11 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   sync:
@@ -12,9 +16,10 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout fork
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
       - name: Configure Git
         run: |
@@ -32,26 +37,35 @@ jobs:
       - name: Get last synced release
         id: last
         run: |
-          last=""
           if [ ! -f .last_upstream_release ]; then
             echo "${{ steps.upstream.outputs.latest_release }}" > .last_upstream_release
+            git add .last_upstream_release
+            git commit -m "chore: initialise last upstream release tracker"
+            git push origin main
           fi
           last=$(<.last_upstream_release)
           echo "Last synced release: $last"
           echo "last_release=$last" >> $GITHUB_OUTPUT
 
-      - name: Exit if no new release
-        if: ${{ steps.upstream.outputs.latest_release == steps.last.outputs.last_release }}
+      - name: Check for new release
+        id: check
         run: |
-          echo "No new upstream release. Exiting."
-          exit 0
+          if [ "${{ steps.upstream.outputs.latest_release }}" = "${{ steps.last.outputs.last_release }}" ]; then
+            echo "No new upstream release. Skipping sync."
+            echo "new_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "New upstream release found: ${{ steps.upstream.outputs.latest_release }}"
+            echo "new_release=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Add upstream remote
+        if: steps.check.outputs.new_release == 'true'
         run: |
           git remote add upstream https://github.com/TryGhost/ghost-docker.git || true
           git fetch upstream
 
       - name: Update main branch
+        if: steps.check.outputs.new_release == 'true'
         run: |
           git checkout main
           git merge --ff-only upstream/main
@@ -59,7 +73,9 @@ jobs:
 
       - name: Rebase custom branch
         id: rebase
+        if: steps.check.outputs.new_release == 'true'
         run: |
+          git fetch origin securitysaysyes
           git checkout securitysaysyes
           if git rebase main; then
             echo "Rebase succeeded"
@@ -70,37 +86,42 @@ jobs:
             git rebase --abort
           fi
 
-      - name: Test rebased branch
-        if: steps.rebase.outputs.rebase_status == 'success'
+      - name: Validate compose config
+        id: tests
+        if: steps.check.outputs.new_release == 'true' && steps.rebase.outputs.rebase_status == 'success'
         run: |
-          # Example CI commands, adjust to your repo
-          # e.g., build Docker, run tests
-          echo "Running tests..."
-          ./ci/run-tests.sh
+          echo "Validating Docker Compose configuration..."
+          docker compose config --quiet
+          echo "test_status=success" >> $GITHUB_OUTPUT
 
       - name: Push or open PR
+        if: steps.check.outputs.new_release == 'true'
         run: |
           if [ "${{ steps.rebase.outputs.rebase_status }}" = "success" ]; then
             git push origin securitysaysyes --force
-            # Only create PR if tests passed (CI step succeeded)
-            if [ ${{ job.status }} = "success" ]; then
+            if [ "${{ steps.tests.outputs.test_status }}" = "success" ]; then
               gh pr create \
-                --title "Rebased securitysaysyes branch" \
+                --title "Rebased securitysaysyes branch on upstream ${{ steps.upstream.outputs.latest_release }}" \
                 --body "Branch rebased on upstream release ${{ steps.upstream.outputs.latest_release }}" \
                 --head securitysaysyes \
                 --base main \
                 --draft || echo "PR already exists"
             fi
           else
-            # On rebase failure, open a PR for manual resolution
             git push origin securitysaysyes --force || true
             gh pr create \
-              --title "Rebase failed: securitysaysyes branch" \
-              --body "Automatic rebase failed. Resolve conflicts manually." \
+              --title "Rebase failed: securitysaysyes branch needs manual resolution" \
+              --body "Automatic rebase onto upstream release ${{ steps.upstream.outputs.latest_release }} failed. Please resolve conflicts manually." \
               --head securitysaysyes \
               --base main \
               --draft || echo "PR already exists"
           fi
 
       - name: Save latest release
-        run: echo "${{ steps.upstream.outputs.latest_release }}" > .last_upstream_release
+        if: steps.check.outputs.new_release == 'true'
+        run: |
+          git checkout main
+          echo "${{ steps.upstream.outputs.latest_release }}" > .last_upstream_release
+          git add .last_upstream_release
+          git diff --staged --quiet || git commit -m "chore: update last synced upstream release to ${{ steps.upstream.outputs.latest_release }}"
+          git push origin main
