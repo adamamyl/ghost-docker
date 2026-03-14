@@ -1,0 +1,26 @@
+{
+	email sysadmin@emfcamp.org
+}
+
+# ── Ghost ──────────────────────────────────────────────────────────────────────
+
+{$DOMAIN} {
+	import snippets/Logging
+
+	import snippets/TrafficAnalytics
+
+	import snippets/ActivityPub
+
+	handle {
+		reverse_proxy ghost:2368
+	}
+
+	encode gzip
+
+	import snippets/SecurityHeaders
+}
+
+# ── EMF Conduct ────────────────────────────────────────────────────────────────
+# Vhost blocks live in the conduct repo and are mounted in via compose.wolfcraig.yml.
+
+import Caddyfile.emf-conduct
