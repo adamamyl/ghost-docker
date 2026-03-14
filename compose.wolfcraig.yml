@@ -1,0 +1,24 @@
+# wolfcraig deployment override.
+# Connects Caddy to the shared caddy-proxy network so it can reach EMF Conduct containers,
+# and switches to Caddyfile.wolfcraig which serves both Ghost and the conduct vhosts.
+#
+# Pre-requisite (once, on wolfcraig):
+#   docker network create caddy-proxy
+#
+# Usage:
+#   docker compose -f compose.yml -f compose.wolfcraig.yml up -d
+
+services:
+  caddy:
+    volumes:
+      - ./caddy/Caddyfile.wolfcraig:/etc/caddy/Caddyfile:ro
+      - /opt/emf-conduct/infra/caddy/Caddyfile.wolfcraig:/etc/caddy/Caddyfile.emf-conduct:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - ghost_network
+      - caddy-proxy
+
+networks:
+  caddy-proxy:
+    external: true
