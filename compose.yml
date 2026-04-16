@@ -88,10 +88,12 @@ services:
       - ghost_network
 
   traffic-analytics:
-    image: ghost/traffic-analytics:1.0.130@sha256:a2b6cc94fcdabeac60c2fd3562ea42e358a7564b60850f1a455aed7a2c027199
+    image: ghost/traffic-analytics:1.0.186@sha256:a0b8bba22d38fd18c1eb0b9476c457547516d5927c530180dca74a963af81660
     restart: unless-stopped
     mem_limit: 256MB
     mem_reservation: 64MB
+    expose:
+      - "3000"
     volumes:
       - traffic_analytics_data:/data
     environment:
@@ -119,10 +121,12 @@ services:
       - traefik.http.middlewares.ghost-analytics-rewrite.replacepathregex.replacement=$$1
 
   activitypub:
-    image: ghcr.io/tryghost/activitypub:1.1.0@sha256:39c212fe23603b182d68e67d555c6b9b04b1e57459dfc0bef26d6e4980eb04d1
+    image: ghcr.io/tryghost/activitypub:1.2.2@sha256:128f0d08d872930b4ab37c9fc1fe8042fefd44622316b05f3885bd068be7cc43
     restart: unless-stopped
     mem_limit: 256m
     mem_reservation: 64m
+    expose:
+      - "8080"
     volumes:
       - ${UPLOAD_LOCATION:-./data/ghost}:/opt/activitypub/content
     env_file:
@@ -221,7 +225,7 @@ services:
     tty: true
 
   activitypub-migrate:
-    image: ghcr.io/tryghost/activitypub-migrations:1.1.0@sha256:b3ab20f55d66eb79090130ff91b57fe93f8a4254b446c2c7fa4507535f503662
+    image: ghcr.io/tryghost/activitypub-migrations:1.2.2@sha256:2af8a0726ac4362cdcab59c308ed612140478d43011ec8d3475bb2634b96d108
     mem_limit: 128m
     mem_reservation: 32m
     environment:
