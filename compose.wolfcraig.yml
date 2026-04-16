@@ -32,5 +32,5 @@ services:
       - traefik.http.routers.ghost-www.middlewares=ghost-www-redirect
       - traefik.http.routers.ghost-www.service=ghost
       - traefik.http.middlewares.ghost-www-redirect.redirectregex.regex=^https://www\.(.+)
-      - traefik.http.middlewares.ghost-www-redirect.redirectregex.replacement=https://${1}
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.replacement=https://$${1}
       - traefik.http.middlewares.ghost-www-redirect.redirectregex.permanent=true
