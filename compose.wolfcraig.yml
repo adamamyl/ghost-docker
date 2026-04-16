@@ -13,3 +13,24 @@
 networks:
   traefik-public:
     external: true
+
+services:
+  ghost:
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ghost.rule=Host(`securitysaysyes.com`)
+      - traefik.http.routers.ghost.entrypoints=websecure
+      - traefik.http.routers.ghost.tls=true
+      - traefik.http.routers.ghost.tls.certresolver=leprod
+      - traefik.http.services.ghost.loadbalancer.server.port=2368
+      - traefik.http.routers.ghost-www.rule=Host(`www.securitysaysyes.com`)
+      - traefik.http.routers.ghost-www.entrypoints=websecure
+      - traefik.http.routers.ghost-www.tls=true
+      - traefik.http.routers.ghost-www.tls.certresolver=leprod
+      - traefik.http.routers.ghost-www.middlewares=ghost-www-redirect
+      - traefik.http.routers.ghost-www.service=ghost
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.regex=^https://www\.(.+)
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.replacement=https://${1}
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.permanent=true
