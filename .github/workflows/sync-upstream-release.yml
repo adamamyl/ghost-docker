@@ -1,4 +1,4 @@
-name: Sync Upstream Releases (Safe)
+name: Sync Upstream Main
 
 on:
   schedule:
@@ -26,102 +26,109 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
 
-      - name: Get latest upstream release
-        id: upstream
-        run: |
-          latest=$(curl -s https://api.github.com/repos/TryGhost/ghost-docker/releases/latest \
-            | jq -r .tag_name)
-          echo "Latest upstream release: $latest"
-          echo "latest_release=$latest" >> $GITHUB_OUTPUT
-
-      - name: Get last synced release
-        id: last
-        run: |
-          if [ ! -f .last_upstream_release ]; then
-            echo "${{ steps.upstream.outputs.latest_release }}" > .last_upstream_release
-            git add .last_upstream_release
-            git commit -m "chore: initialise last upstream release tracker"
-            git push origin main
-          fi
-          last=$(<.last_upstream_release)
-          echo "Last synced release: $last"
-          echo "last_release=$last" >> $GITHUB_OUTPUT
-
-      - name: Check for new release
-        id: check
-        run: |
-          if [ "${{ steps.upstream.outputs.latest_release }}" = "${{ steps.last.outputs.last_release }}" ]; then
-            echo "No new upstream release. Skipping sync."
-            echo "new_release=false" >> $GITHUB_OUTPUT
-          else
-            echo "New upstream release found: ${{ steps.upstream.outputs.latest_release }}"
-            echo "new_release=true" >> $GITHUB_OUTPUT
-          fi
-
       - name: Add upstream remote
-        if: steps.check.outputs.new_release == 'true'
         run: |
-          git remote add upstream https://github.com/TryGhost/ghost-docker.git || true
+          git remote add upstream https://github.com/TryGhost/ghost-docker.git
           git fetch upstream
 
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          upstream_sha=$(git rev-parse upstream/main)
+          last_sha=""
+          if [ -f .last_upstream_sha ]; then
+            last_sha=$(<.last_upstream_sha)
+          fi
+          echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          if [ "${upstream_sha}" = "${last_sha}" ]; then
+            echo "No new upstream commits. Skipping sync."
+            echo "new_commits=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream commits found: ${upstream_sha}"
+            echo "new_commits=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Update main branch
-        if: steps.check.outputs.new_release == 'true'
+        if: steps.check.outputs.new_commits == 'true'
         run: |
           git checkout main
-          git merge --ff-only upstream/main
+          git merge upstream/main -m "chore: merge upstream main"
           git push origin main
 
-      - name: Rebase custom branch
-        id: rebase
-        if: steps.check.outputs.new_release == 'true'
+      - name: Merge main into securitysaysyes
+        id: merge_ssy
+        if: steps.check.outputs.new_commits == 'true'
         run: |
           git fetch origin securitysaysyes
           git checkout securitysaysyes
-          if git rebase main; then
-            echo "Rebase succeeded"
-            echo "rebase_status=success" >> $GITHUB_OUTPUT
+          if git merge main --no-edit -m "chore: merge upstream main into securitysaysyes"; then
+            echo "merge_status=success" >> "$GITHUB_OUTPUT"
           else
-            echo "Rebase failed"
-            echo "rebase_status=failure" >> $GITHUB_OUTPUT
-            git rebase --abort
+            echo "merge_status=failure" >> "$GITHUB_OUTPUT"
+            git merge --abort
           fi
 
-      - name: Validate compose config
-        id: tests
-        if: steps.check.outputs.new_release == 'true' && steps.rebase.outputs.rebase_status == 'success'
+      - name: Merge main into feat/ses-mail
+        id: merge_ses
+        if: steps.check.outputs.new_commits == 'true'
         run: |
-          echo "Validating Docker Compose configuration..."
-          docker compose config --quiet
-          echo "test_status=success" >> $GITHUB_OUTPUT
-
-      - name: Push or open PR
-        if: steps.check.outputs.new_release == 'true'
-        run: |
-          if [ "${{ steps.rebase.outputs.rebase_status }}" = "success" ]; then
-            git push origin securitysaysyes --force
-            if [ "${{ steps.tests.outputs.test_status }}" = "success" ]; then
-              gh pr create \
-                --title "Rebased securitysaysyes branch on upstream ${{ steps.upstream.outputs.latest_release }}" \
-                --body "Branch rebased on upstream release ${{ steps.upstream.outputs.latest_release }}" \
-                --head securitysaysyes \
-                --base main \
-                --draft || echo "PR already exists"
-            fi
+          git fetch origin feat/ses-mail
+          git checkout feat/ses-mail
+          if git merge main --no-edit -m "chore: merge upstream main into feat/ses-mail"; then
+            echo "merge_status=success" >> "$GITHUB_OUTPUT"
           else
-            git push origin securitysaysyes --force || true
+            echo "merge_status=failure" >> "$GITHUB_OUTPUT"
+            git merge --abort
+          fi
+
+      - name: Validate compose config (securitysaysyes)
+        id: tests
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_ssy.outputs.merge_status == 'success'
+        run: |
+          git checkout securitysaysyes
+          if printf 'DATABASE_PASSWORD=x\nDATABASE_ROOT_PASSWORD=x\nDOMAIN=x\nSES_ACCESS_KEY_ID=x\nSES_SECRET_ACCESS_KEY=x\n' > /tmp/.env.ci \
+            && docker compose --env-file /tmp/.env.ci config --quiet 2>/dev/null; then
+            echo "test_status=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "test_status=failure" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push branches or open PRs on failure
+        if: steps.check.outputs.new_commits == 'true'
+        run: |
+          # securitysaysyes
+          if [ "${{ steps.merge_ssy.outputs.merge_status }}" = "success" ]; then
+            git checkout securitysaysyes
+            git push origin securitysaysyes
+          else
             gh pr create \
-              --title "Rebase failed: securitysaysyes branch needs manual resolution" \
-              --body "Automatic rebase onto upstream release ${{ steps.upstream.outputs.latest_release }} failed. Please resolve conflicts manually." \
+              --title "CONFLICT: securitysaysyes needs manual merge from upstream" \
+              --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
               --head securitysaysyes \
               --base main \
-              --draft || echo "PR already exists"
+              --draft \
+              || echo "PR already exists"
           fi
 
-      - name: Save latest release
-        if: steps.check.outputs.new_release == 'true'
+          # feat/ses-mail
+          if [ "${{ steps.merge_ses.outputs.merge_status }}" = "success" ]; then
+            git checkout feat/ses-mail
+            git push origin feat/ses-mail
+          else
+            gh pr create \
+              --title "CONFLICT: feat/ses-mail needs manual merge from upstream" \
+              --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
+              --head feat/ses-mail \
+              --base main \
+              --draft \
+              || echo "PR already exists"
+          fi
+
+      - name: Save upstream SHA
+        if: steps.check.outputs.new_commits == 'true'
         run: |
           git checkout main
-          echo "${{ steps.upstream.outputs.latest_release }}" > .last_upstream_release
-          git add .last_upstream_release
-          git diff --staged --quiet || git commit -m "chore: update last synced upstream release to ${{ steps.upstream.outputs.latest_release }}"
+          echo "${{ steps.check.outputs.upstream_sha }}" > .last_upstream_sha
+          git add .last_upstream_sha
+          git diff --staged --quiet || git commit -m "chore: update last synced upstream sha"
           git push origin main
