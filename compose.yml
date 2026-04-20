@@ -88,10 +88,8 @@ services:
       - ghost_network
 
   traffic-analytics:
-    image: ghost/traffic-analytics:1.0.188@sha256:484e3b96b8a9a73fb0d6ce05bbdc4c735af253265eedd9e846f73ffbff36c334
-    restart: unless-stopped
-    mem_limit: 256MB
-    mem_reservation: 64MB
+    image: ghost/traffic-analytics:1.0.191@sha256:692d4f2eb2e57095d1a3c80e64b49c6a1f9a48406b5de19e0de036253ccd5c7c
+    restart: always
     expose:
       - "3000"
     volumes:
