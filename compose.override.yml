@@ -1,0 +1,108 @@
+---
+# Fork-specific overrides — Traefik proxy, SES adapter, memory limits
+# Automatically loaded by docker compose alongside compose.yml
+
+services:
+  caddy:
+    profiles: [caddy]  # disabled — Traefik handles ingress
+
+  ghost:
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 128m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ghost.rule=Host(`${DOMAIN:?DOMAIN environment variable is required}`)
+      - traefik.http.routers.ghost.entrypoints=websecure
+      - traefik.http.routers.ghost.tls=true
+      - traefik.http.services.ghost.loadbalancer.server.port=2368
+      - traefik.http.routers.ghost-www.rule=Host(`www.${DOMAIN:?DOMAIN environment variable is required}`)
+      - traefik.http.routers.ghost-www.entrypoints=websecure
+      - traefik.http.routers.ghost-www.tls=true
+      - traefik.http.routers.ghost-www.middlewares=ghost-www-redirect
+      - traefik.http.routers.ghost-www.service=ghost
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.regex=^https://www\.(.+)
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.replacement=https://$${1}
+      - traefik.http.middlewares.ghost-www-redirect.redirectregex.permanent=true
+
+  db:
+    restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 256m
+    env_file:
+      - .env
+
+  traffic-analytics:
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ghost-analytics.rule=Host(`${DOMAIN:?DOMAIN environment variable is required}`) && PathRegexp(`.*\\.ghost/analytics`)
+      - traefik.http.routers.ghost-analytics.entrypoints=websecure
+      - traefik.http.routers.ghost-analytics.tls=true
+      - traefik.http.routers.ghost-analytics.middlewares=ghost-analytics-rewrite
+      - traefik.http.routers.ghost-analytics.service=traffic-analytics
+      - traefik.http.services.traffic-analytics.loadbalancer.server.port=3000
+      - traefik.http.middlewares.ghost-analytics-rewrite.replacepathregex.regex=^.*\\.ghost/analytics(.*)$$
+      - traefik.http.middlewares.ghost-analytics-rewrite.replacepathregex.replacement=$$1
+
+  activitypub:
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
+    env_file:
+      - .env
+    networks:
+      - traefik-public
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.ghost-activitypub.rule=Host(`${DOMAIN:?DOMAIN environment variable is required}`) && (PathPrefix(`/.ghost/activitypub/`) || Path(`/.well-known/webfinger`) || Path(`/.well-known/nodeinfo`))
+      - traefik.http.routers.ghost-activitypub.entrypoints=websecure
+      - traefik.http.routers.ghost-activitypub.tls=true
+      - traefik.http.routers.ghost-activitypub.priority=10
+      - traefik.http.services.activitypub.loadbalancer.server.port=8080
+
+  tinybird-login:
+    mem_limit: 128m
+    mem_reservation: 32m
+
+  tinybird-sync:
+    mem_limit: 128m
+    mem_reservation: 32m
+
+  tinybird-deploy:
+    mem_limit: 128m
+    mem_reservation: 32m
+
+  activitypub-migrate:
+    mem_limit: 128m
+    mem_reservation: 32m
+
+  ses-adapter:
+    build:
+      context: ./ses-adapter
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    mem_limit: 64m
+    mem_reservation: 16m
+    environment:
+      AWS_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
+      AWS_REGION: eu-west-1
+      DEFAULT_SENDER: hello@securitysaysyes.com
+      LOG_LEVEL: normal
+    volumes:
+      - ./ses-adapter/config.json:/app/config.json:ro
+    networks:
+      - ghost_network
+
+networks:
+  traefik-public:
+    external: true
