@@ -16,7 +16,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout fork
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           fetch-depth: 0
@@ -49,15 +49,31 @@ jobs:
           fi
 
       - name: Update main branch
+        id: merge_main
         if: steps.check.outputs.new_commits == 'true'
         run: |
           git checkout main
-          git merge upstream/main -m "chore: merge upstream main"
-          git push origin main
+          if git merge upstream/main -m "chore: merge upstream main"; then
+            git push origin main
+            echo "merge_status=success" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "merge_status=failure" >> "$GITHUB_OUTPUT"
+            branch="sync/upstream-$(date +%Y%m%d)"
+            git checkout -b "${branch}" upstream/main
+            git push origin "${branch}"
+            gh pr create \
+              --title "CONFLICT: main needs manual merge from upstream" \
+              --body "Automatic sync failed on upstream ${{ steps.check.outputs.upstream_sha }}. Resolve conflicts manually." \
+              --head "${branch}" \
+              --base main \
+              --draft \
+              || echo "PR already exists"
+          fi
 
       - name: Merge main into securitysaysyes
         id: merge_ssy
-        if: steps.check.outputs.new_commits == 'true'
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
           git fetch origin securitysaysyes
           git checkout securitysaysyes
@@ -70,7 +86,7 @@ jobs:
 
       - name: Merge main into feat/ses-mail
         id: merge_ses
-        if: steps.check.outputs.new_commits == 'true'
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
           git fetch origin feat/ses-mail
           git checkout feat/ses-mail
@@ -83,7 +99,7 @@ jobs:
 
       - name: Validate compose config (securitysaysyes)
         id: tests
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_ssy.outputs.merge_status == 'success'
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success' && steps.merge_ssy.outputs.merge_status == 'success'
         run: |
           git checkout securitysaysyes
           if printf 'DATABASE_PASSWORD=x\nDATABASE_ROOT_PASSWORD=x\nDOMAIN=x\nSES_ACCESS_KEY_ID=x\nSES_SECRET_ACCESS_KEY=x\n' > /tmp/.env.ci \
@@ -94,7 +110,7 @@ jobs:
           fi
 
       - name: Push branches or open PRs on failure
-        if: steps.check.outputs.new_commits == 'true'
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
           # securitysaysyes
           if [ "${{ steps.merge_ssy.outputs.merge_status }}" = "success" ]; then
@@ -125,7 +141,7 @@ jobs:
           fi
 
       - name: Save upstream SHA
-        if: steps.check.outputs.new_commits == 'true'
+        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
           git checkout main
           echo "${{ steps.check.outputs.upstream_sha }}" > .last_upstream_sha
