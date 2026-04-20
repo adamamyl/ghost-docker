@@ -88,6 +88,11 @@ jobs:
         id: merge_ses
         if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
+          if ! git ls-remote --exit-code origin feat/ses-mail; then
+            echo "Branch feat/ses-mail does not exist, skipping."
+            echo "merge_status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git fetch origin feat/ses-mail
           git checkout feat/ses-mail
           if git merge main --no-edit -m "chore: merge upstream main into feat/ses-mail"; then
@@ -130,7 +135,7 @@ jobs:
           if [ "${{ steps.merge_ses.outputs.merge_status }}" = "success" ]; then
             git checkout feat/ses-mail
             git push origin feat/ses-mail
-          else
+          elif [ "${{ steps.merge_ses.outputs.merge_status }}" = "failure" ]; then
             gh pr create \
               --title "CONFLICT: feat/ses-mail needs manual merge from upstream" \
               --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
