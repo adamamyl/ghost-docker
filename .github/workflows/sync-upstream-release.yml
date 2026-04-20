@@ -35,12 +35,8 @@ jobs:
         id: check
         run: |
           upstream_sha=$(git rev-parse upstream/main)
-          last_sha=""
-          if [ -f .last_upstream_sha ]; then
-            last_sha=$(<.last_upstream_sha)
-          fi
           echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
-          if [ "${upstream_sha}" = "${last_sha}" ]; then
+          if git merge-base --is-ancestor upstream/main HEAD; then
             echo "No new upstream commits. Skipping sync."
             echo "new_commits=false" >> "$GITHUB_OUTPUT"
           else
@@ -145,11 +141,3 @@ jobs:
               || echo "PR already exists"
           fi
 
-      - name: Save upstream SHA
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
-        run: |
-          git checkout main
-          echo "${{ steps.check.outputs.upstream_sha }}" > .last_upstream_sha
-          git add .last_upstream_sha
-          git diff --staged --quiet || git commit -m "chore: update last synced upstream sha"
-          git push origin main
