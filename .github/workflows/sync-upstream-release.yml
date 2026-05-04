@@ -30,18 +30,28 @@ jobs:
         run: |
           git remote add upstream https://github.com/TryGhost/ghost-docker.git
           git fetch upstream
+          git fetch origin securitysaysyes
 
       - name: Check for new upstream commits
         id: check
         run: |
           upstream_sha=$(git rev-parse upstream/main)
           echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+
           if git merge-base --is-ancestor upstream/main HEAD; then
-            echo "No new upstream commits. Skipping sync."
+            echo "No new upstream commits."
             echo "new_commits=false" >> "$GITHUB_OUTPUT"
           else
             echo "New upstream commits found: ${upstream_sha}"
             echo "new_commits=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git merge-base --is-ancestor origin/main origin/securitysaysyes; then
+            echo "securitysaysyes is up to date with main."
+            echo "ssy_behind=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "securitysaysyes is behind main — will sync."
+            echo "ssy_behind=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Update main branch
@@ -50,8 +60,25 @@ jobs:
         run: |
           git checkout main
           if git merge upstream/main -m "chore: merge upstream main"; then
-            git push origin main
             echo "merge_status=success" >> "$GITHUB_OUTPUT"
+            # main is protected — push to sync branch and open PR
+            sync_branch="sync/upstream-$(date +%Y%m%d)"
+            git checkout -B "${sync_branch}"
+            git push origin "${sync_branch}" --force-with-lease
+            gh pr create \
+              --repo adamamyl/ghost-docker \
+              --title "chore: sync upstream main $(date +%Y-%m-%d)" \
+              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}. Merge to keep main current." \
+              --head "${sync_branch}" \
+              --base main \
+              || echo "PR already exists"
+            gh pr merge "${sync_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
+            # return to local main so downstream merges pick up upstream changes
+            git checkout main
           else
             git merge --abort
             echo "merge_status=failure" >> "$GITHUB_OUTPUT"
@@ -69,11 +96,12 @@ jobs:
 
       - name: Merge main into securitysaysyes
         id: merge_ssy
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
+        if: >-
+          (steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success')
+          || steps.check.outputs.ssy_behind == 'true'
         run: |
-          git fetch origin securitysaysyes
           git checkout securitysaysyes
-          if git merge main --no-edit -m "chore: merge upstream main into securitysaysyes"; then
+          if git merge main --no-edit -m "chore: merge main into securitysaysyes"; then
             echo "merge_status=success" >> "$GITHUB_OUTPUT"
           else
             echo "merge_status=failure" >> "$GITHUB_OUTPUT"
@@ -100,7 +128,7 @@ jobs:
 
       - name: Validate compose config (securitysaysyes)
         id: tests
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success' && steps.merge_ssy.outputs.merge_status == 'success'
+        if: steps.merge_ssy.outputs.merge_status == 'success'
         run: |
           git checkout securitysaysyes
           if printf 'DATABASE_PASSWORD=x\nDATABASE_ROOT_PASSWORD=x\nDOMAIN=x\nSES_ACCESS_KEY_ID=x\nSES_SECRET_ACCESS_KEY=x\n' > /tmp/.env.ci \
@@ -111,14 +139,33 @@ jobs:
           fi
 
       - name: Push branches or open PRs on failure
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
+        if: >-
+          (steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success')
+          || steps.check.outputs.ssy_behind == 'true'
         run: |
+          date_tag="$(date +%Y%m%d)"
+
           # securitysaysyes
           if [ "${{ steps.merge_ssy.outputs.merge_status }}" = "success" ]; then
             git checkout securitysaysyes
-            git push origin securitysaysyes
+            ssy_branch="sync/ssy-upstream-${date_tag}"
+            git checkout -B "${ssy_branch}"
+            git push origin "${ssy_branch}" --force-with-lease
+            gh pr create \
+              --repo adamamyl/ghost-docker \
+              --title "chore: sync main into securitysaysyes $(date +%Y-%m-%d)" \
+              --body "Automatic sync to ${{ steps.check.outputs.upstream_sha }}." \
+              --head "${ssy_branch}" \
+              --base securitysaysyes \
+              || echo "PR already exists"
+            gh pr merge "${ssy_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
           else
             gh pr create \
+              --repo adamamyl/ghost-docker \
               --title "CONFLICT: securitysaysyes needs manual merge from upstream" \
               --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
               --head securitysaysyes \
@@ -130,9 +177,24 @@ jobs:
           # feat/ses-mail
           if [ "${{ steps.merge_ses.outputs.merge_status }}" = "success" ]; then
             git checkout feat/ses-mail
-            git push origin feat/ses-mail
+            ses_branch="sync/ses-upstream-${date_tag}"
+            git checkout -B "${ses_branch}"
+            git push origin "${ses_branch}" --force-with-lease
+            gh pr create \
+              --repo adamamyl/ghost-docker \
+              --title "chore: sync upstream into feat/ses-mail $(date +%Y-%m-%d)" \
+              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}." \
+              --head "${ses_branch}" \
+              --base feat/ses-mail \
+              || echo "PR already exists"
+            gh pr merge "${ses_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
           elif [ "${{ steps.merge_ses.outputs.merge_status }}" = "failure" ]; then
             gh pr create \
+              --repo adamamyl/ghost-docker \
               --title "CONFLICT: feat/ses-mail needs manual merge from upstream" \
               --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
               --head feat/ses-mail \
@@ -140,4 +202,3 @@ jobs:
               --draft \
               || echo "PR already exists"
           fi
-
