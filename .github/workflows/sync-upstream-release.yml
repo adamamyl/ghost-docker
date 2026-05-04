@@ -50,8 +50,19 @@ jobs:
         run: |
           git checkout main
           if git merge upstream/main -m "chore: merge upstream main"; then
-            git push origin main
             echo "merge_status=success" >> "$GITHUB_OUTPUT"
+            # main is protected — push to sync branch and open PR
+            sync_branch="sync/upstream-$(date +%Y%m%d)"
+            git checkout -B "${sync_branch}"
+            git push origin "${sync_branch}" --force-with-lease
+            gh pr create \
+              --title "chore: sync upstream main $(date +%Y-%m-%d)" \
+              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}. Merge to keep main current." \
+              --head "${sync_branch}" \
+              --base main \
+              || echo "PR already exists"
+            # return to local main so downstream merges pick up upstream changes
+            git checkout main
           else
             git merge --abort
             echo "merge_status=failure" >> "$GITHUB_OUTPUT"
