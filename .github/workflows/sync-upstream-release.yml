@@ -130,12 +130,29 @@ jobs:
       - name: Push branches or open PRs on failure
         if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
         run: |
+          date_tag="$(date +%Y%m%d)"
+
           # securitysaysyes
           if [ "${{ steps.merge_ssy.outputs.merge_status }}" = "success" ]; then
             git checkout securitysaysyes
-            git push origin securitysaysyes
+            ssy_branch="sync/ssy-upstream-${date_tag}"
+            git checkout -B "${ssy_branch}"
+            git push origin "${ssy_branch}" --force-with-lease
+            gh pr create \
+              --repo adamamyl/ghost-docker \
+              --title "chore: sync upstream into securitysaysyes $(date +%Y-%m-%d)" \
+              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}." \
+              --head "${ssy_branch}" \
+              --base securitysaysyes \
+              || echo "PR already exists"
+            gh pr merge "${ssy_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
           else
             gh pr create \
+              --repo adamamyl/ghost-docker \
               --title "CONFLICT: securitysaysyes needs manual merge from upstream" \
               --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
               --head securitysaysyes \
@@ -147,9 +164,24 @@ jobs:
           # feat/ses-mail
           if [ "${{ steps.merge_ses.outputs.merge_status }}" = "success" ]; then
             git checkout feat/ses-mail
-            git push origin feat/ses-mail
+            ses_branch="sync/ses-upstream-${date_tag}"
+            git checkout -B "${ses_branch}"
+            git push origin "${ses_branch}" --force-with-lease
+            gh pr create \
+              --repo adamamyl/ghost-docker \
+              --title "chore: sync upstream into feat/ses-mail $(date +%Y-%m-%d)" \
+              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}." \
+              --head "${ses_branch}" \
+              --base feat/ses-mail \
+              || echo "PR already exists"
+            gh pr merge "${ses_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
           elif [ "${{ steps.merge_ses.outputs.merge_status }}" = "failure" ]; then
             gh pr create \
+              --repo adamamyl/ghost-docker \
               --title "CONFLICT: feat/ses-mail needs manual merge from upstream" \
               --body "Automatic merge onto upstream ${{ steps.check.outputs.upstream_sha }} failed. Resolve manually." \
               --head feat/ses-mail \
