@@ -56,11 +56,17 @@ jobs:
             git checkout -B "${sync_branch}"
             git push origin "${sync_branch}" --force-with-lease
             gh pr create \
+              --repo adamamyl/ghost-docker \
               --title "chore: sync upstream main $(date +%Y-%m-%d)" \
               --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}. Merge to keep main current." \
               --head "${sync_branch}" \
               --base main \
               || echo "PR already exists"
+            gh pr merge "${sync_branch}" \
+              --repo adamamyl/ghost-docker \
+              --auto \
+              --merge \
+              || echo "Auto-merge already set or PR already merged"
             # return to local main so downstream merges pick up upstream changes
             git checkout main
           else
