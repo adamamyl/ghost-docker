@@ -30,18 +30,28 @@ jobs:
         run: |
           git remote add upstream https://github.com/TryGhost/ghost-docker.git
           git fetch upstream
+          git fetch origin securitysaysyes
 
       - name: Check for new upstream commits
         id: check
         run: |
           upstream_sha=$(git rev-parse upstream/main)
           echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+
           if git merge-base --is-ancestor upstream/main HEAD; then
-            echo "No new upstream commits. Skipping sync."
+            echo "No new upstream commits."
             echo "new_commits=false" >> "$GITHUB_OUTPUT"
           else
             echo "New upstream commits found: ${upstream_sha}"
             echo "new_commits=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if git merge-base --is-ancestor origin/main origin/securitysaysyes; then
+            echo "securitysaysyes is up to date with main."
+            echo "ssy_behind=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "securitysaysyes is behind main — will sync."
+            echo "ssy_behind=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Update main branch
@@ -86,11 +96,12 @@ jobs:
 
       - name: Merge main into securitysaysyes
         id: merge_ssy
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
+        if: >-
+          (steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success')
+          || steps.check.outputs.ssy_behind == 'true'
         run: |
-          git fetch origin securitysaysyes
           git checkout securitysaysyes
-          if git merge main --no-edit -m "chore: merge upstream main into securitysaysyes"; then
+          if git merge main --no-edit -m "chore: merge main into securitysaysyes"; then
             echo "merge_status=success" >> "$GITHUB_OUTPUT"
           else
             echo "merge_status=failure" >> "$GITHUB_OUTPUT"
@@ -117,7 +128,7 @@ jobs:
 
       - name: Validate compose config (securitysaysyes)
         id: tests
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success' && steps.merge_ssy.outputs.merge_status == 'success'
+        if: steps.merge_ssy.outputs.merge_status == 'success'
         run: |
           git checkout securitysaysyes
           if printf 'DATABASE_PASSWORD=x\nDATABASE_ROOT_PASSWORD=x\nDOMAIN=x\nSES_ACCESS_KEY_ID=x\nSES_SECRET_ACCESS_KEY=x\n' > /tmp/.env.ci \
@@ -128,7 +139,9 @@ jobs:
           fi
 
       - name: Push branches or open PRs on failure
-        if: steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success'
+        if: >-
+          (steps.check.outputs.new_commits == 'true' && steps.merge_main.outputs.merge_status == 'success')
+          || steps.check.outputs.ssy_behind == 'true'
         run: |
           date_tag="$(date +%Y%m%d)"
 
@@ -140,8 +153,8 @@ jobs:
             git push origin "${ssy_branch}" --force-with-lease
             gh pr create \
               --repo adamamyl/ghost-docker \
-              --title "chore: sync upstream into securitysaysyes $(date +%Y-%m-%d)" \
-              --body "Automatic upstream sync to ${{ steps.check.outputs.upstream_sha }}." \
+              --title "chore: sync main into securitysaysyes $(date +%Y-%m-%d)" \
+              --body "Automatic sync to ${{ steps.check.outputs.upstream_sha }}." \
               --head "${ssy_branch}" \
               --base securitysaysyes \
               || echo "PR already exists"
@@ -189,4 +202,3 @@ jobs:
               --draft \
               || echo "PR already exists"
           fi
-
