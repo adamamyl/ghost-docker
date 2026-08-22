@@ -82,7 +82,7 @@ services:
       - ghost_network
 
   traffic-analytics:
-    image: ghost/traffic-analytics:1.0.356@sha256:92681ea7836711f4665c0eb4cd1a4a0aeaced8474c5561aef6e164d88ded9ee3
+    image: ghost/traffic-analytics:1.0.358@sha256:aa3407219096fd1d951733b2f04f2fb0ed75b45a2df5839021d47c99de5e024a
     restart: always
     expose:
       - "3000"
@@ -100,7 +100,7 @@ services:
       - ghost_network
 
   activitypub:
-    image: ghcr.io/tryghost/activitypub:1.2.7@sha256:f677e8af8df41418c3bfd63b4ec76b9bf2bbd85bde7da0aa9ecd86e41a230835
+    image: ghcr.io/tryghost/activitypub:1.2.8@sha256:1395e7d35f7016e2052d463955b0119cce8bd38b4f8bfa472242bf24d3c7523e
     restart: always
     expose:
       - "8080"
@@ -185,7 +185,7 @@ services:
     tty: true
 
   activitypub-migrate:
-    image: ghcr.io/tryghost/activitypub-migrations:1.2.7@sha256:19724eca7b7669b01047c746738bf34c46dfa587e2be5b8641067d9ab707a7bb
+    image: ghcr.io/tryghost/activitypub-migrations:1.2.8@sha256:a7927f7cdf9b544ab1275ce44dc83d1bd0cf63b825d6fe4e487c1653afde2154
     environment:
       MYSQL_DB: mysql://${DATABASE_USER:-ghost}:${DATABASE_PASSWORD:?DATABASE_PASSWORD environment variable is required}@tcp(db:3306)/activitypub
     networks:
